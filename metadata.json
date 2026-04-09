@@ -1,0 +1,5 @@
+{
+  "name": "SurgicalPro Knot Simulator",
+  "description": "A photorealistic 3D surgical knot tying simulator with AR support.",
+  "requestFramePermissions": ["camera"]
+}
