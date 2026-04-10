@@ -79,7 +79,7 @@ function Clamps() {
 }
 
 export function Scene() {
-  const { currentStep, stepProg, isDragging, activeStrand, setDragState, addDrag, advanceStep, setHoldProgress, staticCam, floorMode, startTimer, timerRun, lightIntensity, leftHanded, setTension, sutureRadius } = useGameStore();
+  const { currentStep, stepProg, isDragging, activeStrand, setDragState, addDrag, advanceStep, setHoldProgress, staticCam, floorMode, startTimer, timerRun, lightIntensity, leftHanded, setTension, sutureRadius, tension } = useGameStore();
   const { gl, camera } = useThree();
   const holdTimerRef = useRef(0);
   const pulseRef = useRef(0);
@@ -312,6 +312,9 @@ export function Scene() {
           emissiveIntensity={Math.max(getEmissive('blue'), getEmissive('red'))} 
           radius={sutureRadius}
           pulseRef={pulseRef}
+          isDragging={isDragging}
+          activeStrand={activeStrand}
+          tension={tension}
         />
         
         {/* Hit Meshes */}

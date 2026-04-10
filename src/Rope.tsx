@@ -8,6 +8,9 @@ const vertexShader = `
   varying vec3 vPosition;
   varying vec3 vWorldPosition;
   uniform float time;
+  uniform float wiggleBlue;
+  uniform float wiggleRed;
+  uniform float currentTension;
   
   vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
   vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -46,7 +49,27 @@ const vertexShader = `
     float fiberPattern = sin((uv.x * 40.0 + uv.y) * 60.0);
     float fiberDisp = fiberPattern * 0.005;
     
-    vec3 displacedPosition = position + normal * (macroNoise + fiberDisp + thicknessVariation);
+    // Snakelike wiggle logic
+    float envBlue = max(0.0, sin(uv.x * 6.28318)) * wiggleBlue;
+    float envRed = max(0.0, sin((uv.x - 0.5) * 6.28318)) * wiggleRed;
+    
+    // Long, sweeping snakelike curves (lower frequency, slower time)
+    float waveBlueX = sin(uv.x * 10.0 - time * 5.0) + sin(uv.x * 20.0 - time * 8.0) * 0.3;
+    float waveBlueY = cos(uv.x * 8.0 - time * 4.0) + cos(uv.x * 15.0 - time * 7.0) * 0.3;
+    float waveBlueZ = sin(uv.x * 12.0 - time * 6.0) + sin(uv.x * 22.0 - time * 9.0) * 0.3;
+    
+    float waveRedX = sin(uv.x * 10.0 + time * 5.0) + sin(uv.x * 20.0 + time * 8.0) * 0.3;
+    float waveRedY = cos(uv.x * 8.0 + time * 4.0) + cos(uv.x * 15.0 + time * 7.0) * 0.3;
+    float waveRedZ = sin(uv.x * 12.0 + time * 6.0) + sin(uv.x * 22.0 + time * 9.0) * 0.3;
+    
+    vec3 snakeBlue = vec3(waveBlueX, waveBlueY, waveBlueZ) * envBlue * 0.12;
+    vec3 snakeRed = vec3(waveRedX, waveRedY, waveRedZ) * envRed * 0.12;
+    vec3 snake = snakeBlue + snakeRed;
+    
+    // Thin the rope when under tension
+    float tensionThinning = currentTension * 0.015;
+    
+    vec3 displacedPosition = position + normal * (macroNoise + fiberDisp + thicknessVariation - tensionThinning) + snake;
     vec4 worldPosition = modelMatrix * vec4(displacedPosition, 1.0);
     vWorldPosition = worldPosition.xyz;
     
@@ -157,6 +180,9 @@ interface RopeProps {
   isHit?: boolean;
   emissiveIntensity?: number;
   pulseRef?: React.MutableRefObject<number>;
+  isDragging?: boolean;
+  activeStrand?: 'blue' | 'red' | null;
+  tension?: number;
   onPointerDown?: (e: any) => void;
 }
 
@@ -168,6 +194,9 @@ export function Rope({
   isHit = false,
   emissiveIntensity = 0,
   pulseRef,
+  isDragging = false,
+  activeStrand = null,
+  tension = 0,
   onPointerDown
 }: RopeProps) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
@@ -182,7 +211,10 @@ export function Rope({
     colorRight: { value: new THREE.Color(colorRight) },
     twistAmount: { value: 40.0 },
     fiberDensity: { value: 120.0 },
-    emissiveIntensity: { value: emissiveIntensity }
+    emissiveIntensity: { value: emissiveIntensity },
+    wiggleBlue: { value: 0.0 },
+    wiggleRed: { value: 0.0 },
+    currentTension: { value: 0.0 }
   }), [colorLeft, colorRight, emissiveIntensity]);
 
   useFrame((state) => {
@@ -190,6 +222,13 @@ export function Rope({
       materialRef.current.uniforms.time.value = state.clock.elapsedTime;
       const pulse = pulseRef?.current || 0;
       materialRef.current.uniforms.emissiveIntensity.value = emissiveIntensity + pulse;
+      
+      const targetWiggleBlue = isDragging && activeStrand === 'blue' ? Math.max(0, 1.0 - tension * 1.2) : 0;
+      const targetWiggleRed = isDragging && activeStrand === 'red' ? Math.max(0, 1.0 - tension * 1.2) : 0;
+      
+      materialRef.current.uniforms.wiggleBlue.value = THREE.MathUtils.lerp(materialRef.current.uniforms.wiggleBlue.value, targetWiggleBlue, 0.1);
+      materialRef.current.uniforms.wiggleRed.value = THREE.MathUtils.lerp(materialRef.current.uniforms.wiggleRed.value, targetWiggleRed, 0.1);
+      materialRef.current.uniforms.currentTension.value = THREE.MathUtils.lerp(materialRef.current.uniforms.currentTension.value, tension, 0.15);
     }
   });
 
