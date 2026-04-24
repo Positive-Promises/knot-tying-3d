@@ -67,9 +67,11 @@ const vertexShader = `
     vec3 snake = snakeBlue + snakeRed;
     
     // Thin the rope when under tension
-    float tensionThinning = currentTension * 0.015;
+    float tensionThinning = currentTension * 0.022;
     
-    vec3 displacedPosition = position + normal * (macroNoise + fiberDisp + thicknessVariation - tensionThinning) + snake;
+    // As tension increases, the snake (wiggle) should straighten out
+    float snakeReduction = smoothstep(0.0, 0.5, currentTension);
+    vec3 displacedPosition = position + normal * (macroNoise + fiberDisp + thicknessVariation - tensionThinning) + mix(snake, vec3(0.0), snakeReduction);
     vec4 worldPosition = modelMatrix * vec4(displacedPosition, 1.0);
     vWorldPosition = worldPosition.xyz;
     
@@ -87,7 +89,11 @@ const fragmentShader = `
   uniform vec3 colorRight;
   uniform float twistAmount;
   uniform float fiberDensity;
-  uniform float emissiveIntensity;
+  uniform float emissiveBlue;
+  uniform float emissiveRed;
+  uniform float isMonofilament;
+  uniform float flipMultiplier;
+  uniform float currentTension;
   
   vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
   vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -134,11 +140,11 @@ const fragmentShader = `
     vec3 baseColor = mix(colorLeft, colorRight, mixFactor);
     
     float twist = vUv.x * twistAmount + vUv.y;
-    float fiberPattern = sin(twist * fiberDensity);
-    float fiberPattern2 = sin(twist * fiberDensity * 0.5 + 1.0);
+    float fiberPattern = mix(sin(twist * fiberDensity), 1.0, isMonofilament);
+    float fiberPattern2 = mix(sin(twist * fiberDensity * 0.5 + 1.0), 1.0, isMonofilament);
     
-    float microNoise = fbm(vec2(vUv.x * 400.0, vUv.y * 100.0));
-    float fuzzyDetail = fbm(vec2(vUv.x * 2000.0, vUv.y * 400.0)) * 0.5;
+    float microNoise = fbm(vec2(vUv.x * 400.0, vUv.y * 100.0)) * mix(1.0, 0.2, isMonofilament);
+    float fuzzyDetail = fbm(vec2(vUv.x * 2000.0, vUv.y * 400.0)) * 0.5 * mix(1.0, 0.1, isMonofilament);
     
     float ao = smoothstep(-1.0, 1.0, fiberPattern) * 0.6 + 0.4;
     ao *= smoothstep(-1.0, 1.0, fiberPattern2) * 0.8 + 0.2;
@@ -146,7 +152,7 @@ const fragmentShader = `
     
     vec3 dPositiondx = dFdx(vWorldPosition);
     vec3 dPositiondy = dFdy(vWorldPosition);
-    vec3 faceNormal = normalize(cross(dPositiondx, dPositiondy));
+    vec3 faceNormal = normalize(cross(dPositiondx, dPositiondy)) * flipMultiplier;
     
     float bump = fiberPattern * 0.5 + microNoise * 0.4 + fuzzyDetail * 0.2;
     
@@ -158,15 +164,32 @@ const fragmentShader = `
     
     vec3 tangent = normalize(vec3(1.0, twistAmount, 0.0));
     float dotTH = dot(tangent, halfDir);
-    float sinTH = sqrt(1.0 - dotTH * dotTH);
-    float spec = pow(sinTH, 20.0) * 0.3;
+    float sinTH = sqrt(max(0.0, 1.0 - dotTH * dotTH));
+    float specPower = mix(20.0, 80.0, isMonofilament);
+    float specIntensity = mix(0.3, 0.8, isMonofilament);
+    float spec = pow(sinTH, specPower) * specIntensity;
+    
+    // Add pronounced tension tint and specular changes
+    float tensionFactor = smoothstep(0.3, 0.95, currentTension);
+    
+    // Specular highlights become sharper and brighter as it pulls tight
+    spec *= 1.0 + currentTension * 3.5;
     
     vec3 finalColor = baseColor * ao * (diff * 0.8 + 0.2);
     finalColor += vec3(spec);
     finalColor *= 1.0 + microNoise * 0.15;
     
-    // Add emissive glow
-    finalColor += baseColor * emissiveIntensity;
+    if (currentTension > 0.0) {
+      vec3 tensionColor = vec3(1.0, 0.05, 0.0); // very bright red
+      finalColor = mix(finalColor, mix(finalColor, tensionColor, 0.9), tensionFactor);
+      
+      // boost emissive brightness significantly more on high tension
+      finalColor += tensionColor * smoothstep(0.5, 1.0, currentTension) * 1.5;
+    }
+    
+    // Add emissive glow targeted to correct side
+    float emissiveMultiplier = mix(emissiveBlue, emissiveRed, mixFactor);
+    finalColor += baseColor * emissiveMultiplier;
     
     gl_FragColor = vec4(finalColor, 1.0);
   }
@@ -178,12 +201,19 @@ interface RopeProps {
   colorRight?: string;
   radius?: number;
   isHit?: boolean;
-  emissiveIntensity?: number;
+  emissiveBlue?: number;
+  emissiveRed?: number;
   pulseRef?: React.MutableRefObject<number>;
   isDragging?: boolean;
   activeStrand?: 'blue' | 'red' | null;
   tension?: number;
+  sutureType?: string;
+  leftHanded?: boolean;
+  isTargetGlow?: 'blue' | 'red' | 'both' | false;
+  isHoveredGlow?: 'blue' | 'red' | false;
   onPointerDown?: (e: any) => void;
+  onPointerOver?: (e: any) => void;
+  onPointerOut?: (e: any) => void;
 }
 
 export function Rope({ 
@@ -192,12 +222,19 @@ export function Rope({
   colorRight = '#0055ff', 
   radius = 0.046, 
   isHit = false,
-  emissiveIntensity = 0,
+  emissiveBlue = 0,
+  emissiveRed = 0,
   pulseRef,
   isDragging = false,
   activeStrand = null,
   tension = 0,
-  onPointerDown
+  sutureType = 'Vicryl',
+  leftHanded = false,
+  isTargetGlow = false,
+  isHoveredGlow = false,
+  onPointerDown,
+  onPointerOver,
+  onPointerOut
 }: RopeProps) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   
@@ -205,23 +242,44 @@ export function Rope({
     return new THREE.CatmullRomCurve3(points);
   }, [points]);
 
-  const uniforms = useMemo(() => ({
-    time: { value: 0 },
-    colorLeft: { value: new THREE.Color(colorLeft) },
-    colorRight: { value: new THREE.Color(colorRight) },
-    twistAmount: { value: 40.0 },
-    fiberDensity: { value: 120.0 },
-    emissiveIntensity: { value: emissiveIntensity },
-    wiggleBlue: { value: 0.0 },
-    wiggleRed: { value: 0.0 },
-    currentTension: { value: 0.0 }
-  }), [colorLeft, colorRight, emissiveIntensity]);
+  const uniforms = useMemo(() => {
+    const isMonofilament = (sutureType === 'Nylon' || sutureType === 'Prolene') ? 1.0 : 0.0;
+    return {
+      time: { value: 0 },
+      colorLeft: { value: new THREE.Color(colorLeft) },
+      colorRight: { value: new THREE.Color(colorRight) },
+      twistAmount: { value: 40.0 },
+      fiberDensity: { value: 120.0 },
+      emissiveBlue: { value: emissiveBlue },
+      emissiveRed: { value: emissiveRed },
+      wiggleBlue: { value: 0.0 },
+      wiggleRed: { value: 0.0 },
+      currentTension: { value: 0.0 },
+      isMonofilament: { value: isMonofilament },
+      flipMultiplier: { value: leftHanded ? -1.0 : 1.0 }
+    };
+  }, [colorLeft, colorRight, emissiveBlue, emissiveRed, sutureType, leftHanded]);
 
   useFrame((state) => {
     if (materialRef.current) {
       materialRef.current.uniforms.time.value = state.clock.elapsedTime;
       const pulse = pulseRef?.current || 0;
-      materialRef.current.uniforms.emissiveIntensity.value = emissiveIntensity + pulse;
+      
+      let extraBlue = 0;
+      let extraRed = 0;
+      
+      if (isTargetGlow === 'blue' || isTargetGlow === 'both') {
+        extraBlue = 0.3 + Math.sin(state.clock.elapsedTime * 6.0) * 0.15;
+      }
+      if (isTargetGlow === 'red' || isTargetGlow === 'both') {
+        extraRed = 0.3 + Math.sin(state.clock.elapsedTime * 6.0) * 0.15;
+      }
+      
+      if (isHoveredGlow === 'blue') extraBlue = 1.0;
+      if (isHoveredGlow === 'red') extraRed = 1.0;
+      
+      materialRef.current.uniforms.emissiveBlue.value = Math.max(emissiveBlue, pulse + extraBlue);
+      materialRef.current.uniforms.emissiveRed.value = Math.max(emissiveRed, pulse + extraRed);
       
       const targetWiggleBlue = isDragging && activeStrand === 'blue' ? Math.max(0, 1.0 - tension * 1.2) : 0;
       const targetWiggleRed = isDragging && activeStrand === 'red' ? Math.max(0, 1.0 - tension * 1.2) : 0;
@@ -234,9 +292,13 @@ export function Rope({
 
   if (isHit) {
     return (
-      <mesh onPointerDown={onPointerDown}>
+      <mesh 
+        onPointerDown={onPointerDown} 
+        onPointerOver={onPointerOver} 
+        onPointerOut={onPointerOut}
+      >
         <tubeGeometry args={[curve, 64, radius * 2.5, 8, false]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
     );
   }

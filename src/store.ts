@@ -91,6 +91,7 @@ interface GameState {
   arMode: boolean;
   leftHanded: boolean;
   sutureGauge: string;
+  sutureType: string;
   
   setDragState: (isDragging: boolean, strand?: 'blue' | 'red' | null) => void;
   addDrag: (amount: number, smooth: number) => void;
@@ -114,6 +115,7 @@ interface GameState {
   setARMode: (v: boolean) => void;
   setLeftHanded: (v: boolean) => void;
   setSutureGauge: (v: string) => void;
+  setSutureType: (v: string) => void;
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -146,6 +148,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   arMode: false,
   leftHanded: false,
   sutureGauge: '2-0',
+  sutureType: 'Vicryl',
 
   setDragState: (isDragging, strand = null) => set({ isDragging, activeStrand: strand }),
   
@@ -277,12 +280,15 @@ export const useGameStore = create<GameState>((set, get) => ({
   setTension: (v) => set({ tension: v }),
   setARMode: (v) => set({ arMode: v }),
   setLeftHanded: (v) => set({ leftHanded: v }),
+  setSutureType: (v) => set({ sutureType: v }),
   setSutureGauge: (v) => {
     const radiusMap: Record<string, number> = {
       '2-0': 0.046,
       '3-0': 0.035,
       '4-0': 0.025,
-      '5-0': 0.015
+      '5-0': 0.015,
+      '6-0': 0.010,
+      '7-0': 0.007
     };
     set({ sutureGauge: v, sutureRadius: radiusMap[v] || 0.046 });
   }

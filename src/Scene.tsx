@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -21,11 +21,11 @@ function buildPts(zRange: number[], xBase: number, shape: 'flat' | 'arc' | 'sett
     let y = BASE_Y, x = xBase;
 
     if (shape === 'arc') {
-      const fac = inCtr ? Math.pow(1 - Math.abs(nz) / 0.52, 0.6) : 0;
+      const fac = inCtr ? Math.pow(Math.max(0, 1 - Math.abs(nz) / 0.52), 0.6) : 0;
       y = BASE_Y + (CROSS_H - BASE_Y) * fac;
-      x = xBase + (xPeak - xBase) * (inCtr ? Math.pow(1 - Math.abs(nz) / 0.52, 0.8) : 0);
+      x = xBase + (xPeak - xBase) * (inCtr ? Math.pow(Math.max(0, 1 - Math.abs(nz) / 0.52), 0.8) : 0);
     } else if (shape === 'settled') {
-      const fac = inCtr ? Math.pow(1 - Math.abs(nz) / 0.52, 0.7) : 0;
+      const fac = inCtr ? Math.pow(Math.max(0, 1 - Math.abs(nz) / 0.52), 0.7) : 0;
       y = BASE_Y + (SETTLE_Y - BASE_Y) * fac;
       x = xBase + (0 - xBase) * (inCtr ? fac : 0);
     }
@@ -66,11 +66,11 @@ function Clamps() {
         <group key={i} position={[x, 0.084, z]}>
           <mesh castShadow receiveShadow>
             <boxGeometry args={[0.06, 0.026, 0.07]} />
-            <meshStandardMaterial color="#d4a840" metalness={0.88} roughness={0.08} />
+            <meshStandardMaterial color="#d4a840" metalness={0.88} roughness={0.08} side={THREE.DoubleSide} />
           </mesh>
           <mesh rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
             <torusGeometry args={[0.04, 0.01, 7, 18]} />
-            <meshStandardMaterial color="#d4a840" metalness={0.88} roughness={0.08} />
+            <meshStandardMaterial color="#d4a840" metalness={0.88} roughness={0.08} side={THREE.DoubleSide} />
           </mesh>
         </group>
       ))}
@@ -78,11 +78,53 @@ function Clamps() {
   );
 }
 
+function FinalKnot({ currentStep, stepProg, showSuccess }: { currentStep: number, stepProg: number, showSuccess: boolean }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+
+  useFrame((state) => {
+    if (!meshRef.current || !materialRef.current) return;
+    if (showSuccess) {
+      // Gentle pulsing rotation and scale when successful
+      meshRef.current.rotation.z = state.clock.elapsedTime * 0.5;
+      const pulse = Math.sin(state.clock.elapsedTime * 4) * 0.1 + 1.2;
+      meshRef.current.scale.setScalar(pulse);
+      
+      // Emissive throb
+      materialRef.current.emissiveIntensity = 0.5 + Math.sin(state.clock.elapsedTime * 6) * 0.5;
+      materialRef.current.emissive.setHex(0x8a40ff);
+    } else {
+      // Default behavior
+      meshRef.current.rotation.z = 0;
+      meshRef.current.scale.setScalar(Math.min(1.2, (currentStep - 3 + stepProg) / 2.5));
+      materialRef.current.emissiveIntensity = 0;
+    }
+  });
+
+  if (currentStep <= 3) return null;
+
+  return (
+    <mesh ref={meshRef} position={[0, 0.54, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      <torusKnotGeometry args={[0.05, 0.018, 128, 16, 2, 3]} />
+      <meshStandardMaterial 
+        ref={materialRef}
+        color="#8a40ff" 
+        roughness={0.4} 
+        metalness={0.2} 
+        transparent 
+        opacity={showSuccess ? 1.0 : Math.min(0.8, (currentStep - 3 + stepProg) / 3)} 
+        side={THREE.DoubleSide} 
+      />
+    </mesh>
+  );
+}
+
 export function Scene() {
-  const { currentStep, stepProg, isDragging, activeStrand, setDragState, addDrag, advanceStep, setHoldProgress, staticCam, floorMode, startTimer, timerRun, lightIntensity, leftHanded, setTension, sutureRadius, tension } = useGameStore();
+  const { currentStep, stepProg, isDragging, activeStrand, setDragState, addDrag, advanceStep, setHoldProgress, staticCam, floorMode, startTimer, timerRun, lightIntensity, leftHanded, setTension, sutureRadius, tension, sutureType, showSuccess } = useGameStore();
   const { gl, camera } = useThree();
   const holdTimerRef = useRef(0);
   const pulseRef = useRef(0);
+  const [hoveredStrand, setHoveredStrand] = useState<'blue' | 'red' | null>(null);
 
   // Handle global drag
   useEffect(() => {
@@ -200,14 +242,21 @@ export function Scene() {
     import('./store').then(m => m.playSound('drag'));
   };
 
-  const getEmissive = (strand: 'blue' | 'red') => {
+  // Handle cursor styles based on hover and drag states
+  useEffect(() => {
     const req = ['blue', 'both', 'red', 'both', 'blue', 'both'][currentStep - 1];
-    if (req === strand || req === 'both') {
-      // Pulse effect could be added here via useFrame, but static is fine for now
-      return 0.4;
+    if (isDragging) {
+      document.body.style.cursor = 'grabbing';
+    } else if (hoveredStrand) {
+      if (req === hoveredStrand || req === 'both') {
+        document.body.style.cursor = 'grab';
+      } else {
+        document.body.style.cursor = 'not-allowed';
+      }
+    } else {
+      document.body.style.cursor = 'auto';
     }
-    return 0.0;
-  };
+  }, [hoveredStrand, isDragging, currentStep]);
 
   return (
     <>
@@ -247,36 +296,31 @@ export function Scene() {
         {/* Posts */}
         <mesh position={[-1.26, 0.09, 0]} castShadow>
           <cylinderGeometry args={[0.158, 0.22, 1.62, 24]} />
-          <meshStandardMaterial color="#9e7860" roughness={0.24} metalness={0.54} />
+          <meshStandardMaterial color="#9e7860" roughness={0.24} metalness={0.54} side={THREE.DoubleSide} />
         </mesh>
         <mesh position={[1.26, 0.09, 0]} castShadow>
           <cylinderGeometry args={[0.158, 0.22, 1.62, 24]} />
-          <meshStandardMaterial color="#9e7860" roughness={0.24} metalness={0.54} />
+          <meshStandardMaterial color="#9e7860" roughness={0.24} metalness={0.54} side={THREE.DoubleSide} />
         </mesh>
 
         {/* Vessel */}
         <group position={[0, 0.46, 0]}>
           <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
             <cylinderGeometry args={[0.072, 0.072, 2.88, 60]} />
-            <meshStandardMaterial color="#ee7878" emissive="#440808" emissiveIntensity={0.2} roughness={0.48} />
+            <meshStandardMaterial color="#ee7878" emissive="#440808" emissiveIntensity={0.2} roughness={0.48} side={THREE.DoubleSide} />
           </mesh>
           <mesh position={[-1.44, 0, 0]}>
             <sphereGeometry args={[0.075, 12, 8]} />
-            <meshStandardMaterial color="#ee7878" emissive="#440808" emissiveIntensity={0.2} roughness={0.48} />
+            <meshStandardMaterial color="#ee7878" emissive="#440808" emissiveIntensity={0.2} roughness={0.48} side={THREE.DoubleSide} />
           </mesh>
           <mesh position={[1.44, 0, 0]}>
             <sphereGeometry args={[0.075, 12, 8]} />
-            <meshStandardMaterial color="#ee7878" emissive="#440808" emissiveIntensity={0.2} roughness={0.48} />
+            <meshStandardMaterial color="#ee7878" emissive="#440808" emissiveIntensity={0.2} roughness={0.48} side={THREE.DoubleSide} />
           </mesh>
         </group>
 
         {/* Knot Geometry Visualization */}
-        {currentStep > 3 && (
-          <mesh position={[0, 0.54, 0]} rotation={[Math.PI / 2, 0, 0]} scale={Math.min(1.2, (currentStep - 3 + stepProg) / 2.5)}>
-            <torusKnotGeometry args={[0.05, 0.018, 128, 16, 2, 3]} />
-            <meshStandardMaterial color="#8a40ff" roughness={0.4} metalness={0.2} transparent opacity={Math.min(0.8, (currentStep - 3 + stepProg) / 3)} />
-          </mesh>
-        )}
+        <FinalKnot currentStep={currentStep} stepProg={stepProg} showSuccess={showSuccess} />
 
         <Clamps />
 
@@ -307,19 +351,38 @@ export function Scene() {
             ];
             return [...reversedBp, ...connection, ...rp];
           }, [bp, rp])} 
-          colorLeft="#1a5eff" 
-          colorRight="#ff2222" 
-          emissiveIntensity={Math.max(getEmissive('blue'), getEmissive('red'))} 
+          colorLeft="#1a5eff"
+          colorRight="#ff2222"
           radius={sutureRadius}
           pulseRef={pulseRef}
           isDragging={isDragging}
           activeStrand={activeStrand}
           tension={tension}
+          sutureType={sutureType}
+          leftHanded={leftHanded}
+          isTargetGlow={['blue', 'both', 'red', 'both', 'blue', 'both'][currentStep - 1] as any}
+          isHoveredGlow={hoveredStrand || false}
         />
         
         {/* Hit Meshes */}
-        <Rope points={bp} isHit onPointerDown={handlePointerDown('blue')} radius={sutureRadius * 2.0} />
-        <Rope points={rp} isHit onPointerDown={handlePointerDown('red')} radius={sutureRadius * 2.0} />
+        <Rope 
+          points={bp} 
+          isHit 
+          onPointerDown={handlePointerDown('blue')} 
+          onPointerOver={() => setHoveredStrand('blue')}
+          onPointerOut={() => setHoveredStrand(null)}
+          radius={sutureRadius * 2.5} 
+          leftHanded={leftHanded} 
+        />
+        <Rope 
+          points={rp} 
+          isHit 
+          onPointerDown={handlePointerDown('red')} 
+          onPointerOver={() => setHoveredStrand('red')}
+          onPointerOut={() => setHoveredStrand(null)}
+          radius={sutureRadius * 2.5} 
+          leftHanded={leftHanded} 
+        />
       </group>
 
       <OrbitControls 

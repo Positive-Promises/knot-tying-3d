@@ -125,6 +125,7 @@ export function UI() {
     setDiff, setMode, setCam, setFloor, resetSim,
     showSuccess, toastMsg, precSamples, allPrecSamples, tickTimer,
     lightIntensity, setLight, sutureGauge, setSutureGauge,
+    sutureType, setSutureType,
     arMode, setARMode, leftHanded, setLeftHanded, undoStep,
     showInfoModal, setInfoModal, tension, isDragging, holdProgress
   } = useGameStore();
@@ -237,13 +238,26 @@ export function UI() {
 
           {/* Suture Gauge */}
           <div className="text-[10px] tracking-widest text-[#00e5ff]/40 uppercase mb-1.5 mt-1">Suture Gauge</div>
-          <div className="flex gap-1 mb-2.5">
-            {['2-0', '3-0', '4-0', '5-0'].map(g => (
+          <div className="flex flex-wrap gap-1 mb-2.5">
+            {['2-0', '3-0', '4-0', '5-0', '6-0', '7-0'].map(g => (
               <button 
                 key={g} onClick={() => setSutureGauge(g)} 
-                className={`flex-1 py-1.5 text-center text-[10px] font-semibold rounded border ${sutureGauge === g ? 'bg-[#005ca5]/30 border-[#00c3f5]/40 text-[#00e5ff]' : 'bg-[#001630]/80 border-[#005591]/20 text-[#64afd7]/60'}`}
+                className={`flex-1 min-w-[30%] py-1.5 text-center text-[10px] font-semibold rounded border ${sutureGauge === g ? 'bg-[#005ca5]/30 border-[#00c3f5]/40 text-[#00e5ff]' : 'bg-[#001630]/80 border-[#005591]/20 text-[#64afd7]/60'}`}
               >
                 {g}
+              </button>
+            ))}
+          </div>
+
+          {/* Suture Type */}
+          <div className="text-[10px] tracking-widest text-[#00e5ff]/40 uppercase mb-1.5 mt-1">Suture Type</div>
+          <div className="flex flex-wrap gap-1 mb-2.5">
+            {['Vicryl', 'Silk', 'Nylon', 'Prolene'].map(t => (
+              <button 
+                key={t} onClick={() => setSutureType(t)} 
+                className={`flex-1 min-w-[45%] py-1.5 text-center text-[10px] font-semibold rounded border ${sutureType === t ? 'bg-[#005ca5]/30 border-[#00c3f5]/40 text-[#00e5ff]' : 'bg-[#001630]/80 border-[#005591]/20 text-[#64afd7]/60'}`}
+              >
+                {t}
               </button>
             ))}
           </div>
@@ -388,6 +402,18 @@ export function UI() {
               </div>
               <span className="text-[10px] text-[#b4daf0]/50 font-['Space_Mono'] w-8 text-right">{Math.round(tension * 100)}%</span>
             </div>
+            <div className="w-px h-4 bg-[#00e5ff]/20" />
+            <button 
+              onClick={undoStep} 
+              disabled={currentStep <= 1}
+              className="text-[10px] font-['Space_Mono'] text-[#00e5ff]/80 hover:text-[#00e5ff] disabled:opacity-30 disabled:hover:text-[#00e5ff]/80 flex items-center gap-1.5 px-2 py-0.5 rounded border border-transparent hover:border-[#00e5ff]/30 hover:bg-[#00e5ff]/10 transition-colors"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 7v6h6" />
+                <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+              </svg>
+              UNDO
+            </button>
           </div>
         </div>
       )}
