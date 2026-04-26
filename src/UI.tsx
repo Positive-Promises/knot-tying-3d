@@ -127,7 +127,8 @@ export function UI() {
     lightIntensity, setLight, sutureGauge, setSutureGauge,
     sutureType, setSutureType,
     arMode, setARMode, leftHanded, setLeftHanded, undoStep,
-    showInfoModal, setInfoModal, tension, isDragging, holdProgress
+    showInfoModal, setInfoModal, tension, isDragging, holdProgress,
+    sutureLength, foldedLength, procedurePreset, setProcedurePreset
   } = useGameStore();
 
   useEffect(() => {
@@ -260,6 +261,64 @@ export function UI() {
                 {t}
               </button>
             ))}
+          </div>
+
+          {/* Procedure Preset */}
+          <div className="text-[10px] tracking-widest text-[#00e5ff]/40 uppercase mb-1.5 mt-1">Procedure Preset</div>
+          <div className="flex flex-col gap-1 mb-2.5">
+            {['Intestinal Anastomosis', 'Vascular Suturing', 'Skin Closure'].map((p: string) => (
+              <button 
+                key={p} 
+                onClick={() => setProcedurePreset(p)} 
+                className={`py-1.5 px-2 text-left text-[10px] font-semibold rounded border ${procedurePreset === p ? 'bg-[#005ca5]/30 border-[#00c3f5]/40 text-[#00e5ff]' : 'bg-[#001630]/80 border-[#005591]/20 text-[#64afd7]/60'}`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+
+          <div className="bg-[#001630]/60 border border-[#005591]/40 rounded p-2 mb-2.5 flex flex-col gap-1.5">
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-[#b4daf0]/70">Suture Length</span>
+              <span className="font-mono text-[#00e5ff] font-bold">{sutureLength / 10} cm</span>
+            </div>
+            
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-[#b4daf0]/70">Folded Length</span>
+              <span className="font-mono text-[#00ff8c] font-bold">{foldedLength / 10} cm</span>
+            </div>
+            
+            {/* Warning logic for folded length */}
+            {(() => {
+              const foldRatio = foldedLength / sutureLength;
+              const isIdeal = foldRatio >= 0.35 && foldRatio <= 0.50 && 
+                              foldedLength >= 250 && 
+                              foldedLength <= 400;
+              
+              if (!isIdeal) {
+                return (
+                  <div className="mt-1 text-[9px] text-[#ffb800] bg-[#ffb800]/10 border border-[#ffb800]/20 rounded p-1 leading-tight">
+                    ⚠️ Folded ratio ideally 35-50% with 25-40cm length for optimal handling.
+                  </div>
+                );
+              }
+              return (
+                <div className="mt-1 text-[9px] text-[#00ff8c] bg-[#00ff8c]/10 border border-[#00ff8c]/20 rounded p-1 leading-tight">
+                  ✓ Ideal proportions for surgical handling.
+                </div>
+              );
+            })()}
+            
+            <input 
+              type="range" min="300" max="1500" step="10" 
+              value={sutureLength} onChange={(e) => useGameStore.getState().setSutureLength(parseInt(e.target.value))}
+              className="w-full h-1 bg-[#002040] rounded-lg appearance-none cursor-pointer mt-1"
+            />
+            <input 
+              type="range" min="100" max="800" step="10" 
+              value={foldedLength} onChange={(e) => useGameStore.getState().setFoldedLength(parseInt(e.target.value))}
+              className="w-full h-1 bg-[#002040] rounded-lg appearance-none cursor-pointer mt-1 mb-1"
+            />
           </div>
 
           {/* Light Intensity */}

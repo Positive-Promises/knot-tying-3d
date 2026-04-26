@@ -94,6 +94,9 @@ const fragmentShader = `
   uniform float isMonofilament;
   uniform float flipMultiplier;
   uniform float currentTension;
+  uniform float specularPower;
+  uniform float specularIntensity;
+  uniform float roughnessFactor;
   
   vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
   vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -165,23 +168,17 @@ const fragmentShader = `
     vec3 tangent = normalize(vec3(1.0, twistAmount, 0.0));
     float dotTH = dot(tangent, halfDir);
     float sinTH = sqrt(max(0.0, 1.0 - dotTH * dotTH));
-    float specPower = mix(20.0, 80.0, isMonofilament);
-    float specIntensity = mix(0.3, 0.8, isMonofilament);
-    float spec = pow(sinTH, specPower) * specIntensity;
+    // Use the dynamic tension-based uniforms
+    float spec = pow(max(sinTH, 0.00001), specularPower) * specularIntensity;
     
-    // Add pronounced tension tint and specular changes
-    float tensionFactor = smoothstep(0.3, 0.95, currentTension);
-    
-    // Specular highlights become sharper and brighter as it pulls tight
-    spec *= 1.0 + currentTension * 3.5;
-    
-    vec3 finalColor = baseColor * ao * (diff * 0.8 + 0.2);
+    vec3 finalColor = baseColor * ao * (diff * 0.8 * roughnessFactor + 0.2);
     finalColor += vec3(spec);
-    finalColor *= 1.0 + microNoise * 0.15;
+    finalColor *= 1.0 + microNoise * 0.15 * roughnessFactor;
     
     if (currentTension > 0.0) {
       vec3 tensionColor = vec3(1.0, 0.05, 0.0); // very bright red
-      finalColor = mix(finalColor, mix(finalColor, tensionColor, 0.9), tensionFactor);
+      float tempTensionFactor = smoothstep(0.3, 0.95, currentTension);
+      finalColor = mix(finalColor, mix(finalColor, tensionColor, 0.9), tempTensionFactor);
       
       // boost emissive brightness significantly more on high tension
       finalColor += tensionColor * smoothstep(0.5, 1.0, currentTension) * 1.5;
@@ -190,6 +187,10 @@ const fragmentShader = `
     // Add emissive glow targeted to correct side
     float emissiveMultiplier = mix(emissiveBlue, emissiveRed, mixFactor);
     finalColor += baseColor * emissiveMultiplier;
+    
+    // Proper gamma correction
+    finalColor = max(finalColor, vec3(0.0));
+    finalColor = pow(finalColor, vec3(1.0 / 2.2));
     
     gl_FragColor = vec4(finalColor, 1.0);
   }
@@ -255,6 +256,9 @@ export function Rope({
       wiggleBlue: { value: 0.0 },
       wiggleRed: { value: 0.0 },
       currentTension: { value: 0.0 },
+      specularPower: { value: isMonofilament ? 80.0 : 20.0 },
+      specularIntensity: { value: isMonofilament ? 0.8 : 0.3 },
+      roughnessFactor: { value: 1.0 },
       isMonofilament: { value: isMonofilament },
       flipMultiplier: { value: leftHanded ? -1.0 : 1.0 }
     };
@@ -286,7 +290,29 @@ export function Rope({
       
       materialRef.current.uniforms.wiggleBlue.value = THREE.MathUtils.lerp(materialRef.current.uniforms.wiggleBlue.value, targetWiggleBlue, 0.1);
       materialRef.current.uniforms.wiggleRed.value = THREE.MathUtils.lerp(materialRef.current.uniforms.wiggleRed.value, targetWiggleRed, 0.1);
-      materialRef.current.uniforms.currentTension.value = THREE.MathUtils.lerp(materialRef.current.uniforms.currentTension.value, tension, 0.15);
+      const lerpedTension = THREE.MathUtils.lerp(materialRef.current.uniforms.currentTension.value, tension, 0.15);
+      materialRef.current.uniforms.currentTension.value = lerpedTension;
+
+      // Tension calculation for uniforms based on real-time tension physics
+      const isMonofilament = (sutureType === 'Nylon' || sutureType === 'Prolene');
+      const baseSpecPower = isMonofilament ? 80.0 : 20.0;
+      const baseSpecIntensity = isMonofilament ? 0.8 : 0.3;
+      
+      let specIntensityMultiplier = 1.0;
+      let roughnessMultiplier = 1.0;
+      
+      if (lerpedTension > 0.7) {
+        // smoothstep between 0.7 and 1.0
+        const tensionFactor = THREE.MathUtils.smoothstep(lerpedTension, 0.7, 1.0);
+        // increase specular intensity by 15-25% (say 20%)
+        specIntensityMultiplier = 1.0 + 0.20 * tensionFactor;
+        // decrease surface roughness by 20-30% (say 25% -> roughness 0.75)
+        roughnessMultiplier = 1.0 - 0.25 * tensionFactor;
+      }
+      
+      materialRef.current.uniforms.specularPower.value = baseSpecPower / roughnessMultiplier;
+      materialRef.current.uniforms.specularIntensity.value = baseSpecIntensity * specIntensityMultiplier;
+      materialRef.current.uniforms.roughnessFactor.value = roughnessMultiplier;
     }
   });
 

@@ -93,6 +93,11 @@ interface GameState {
   sutureGauge: string;
   sutureType: string;
   
+  // Suture length settings (in mm)
+  sutureLength: number;
+  foldedLength: number;
+  procedurePreset: string;
+  
   setDragState: (isDragging: boolean, strand?: 'blue' | 'red' | null) => void;
   addDrag: (amount: number, smooth: number) => void;
   setHoldProgress: (v: number) => void;
@@ -116,6 +121,9 @@ interface GameState {
   setLeftHanded: (v: boolean) => void;
   setSutureGauge: (v: string) => void;
   setSutureType: (v: string) => void;
+  setSutureLength: (v: number) => void;
+  setFoldedLength: (v: number) => void;
+  setProcedurePreset: (v: string) => void;
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -149,6 +157,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   leftHanded: false,
   sutureGauge: '2-0',
   sutureType: 'Vicryl',
+  sutureLength: 900,
+  foldedLength: 450,
+  procedurePreset: 'Intestinal Anastomosis',
 
   setDragState: (isDragging, strand = null) => set({ isDragging, activeStrand: strand }),
   
@@ -291,5 +302,23 @@ export const useGameStore = create<GameState>((set, get) => ({
       '7-0': 0.007
     };
     set({ sutureGauge: v, sutureRadius: radiusMap[v] || 0.046 });
+  },
+  
+  setSutureLength: (v) => set({ sutureLength: v }),
+  setFoldedLength: (v) => set({ foldedLength: v }),
+  setProcedurePreset: (v) => {
+    let newLen = 900;
+    let newFold = 450;
+    if (v === 'Vascular Suturing') {
+      newLen = 750;
+      newFold = 300;
+    } else if (v === 'Skin Closure') {
+      newLen = 1200;
+      newFold = 600;
+    } else if (v === 'Intestinal Anastomosis') {
+      newLen = 900;
+      newFold = 450;
+    }
+    set({ procedurePreset: v, sutureLength: newLen, foldedLength: newFold });
   }
 }));
